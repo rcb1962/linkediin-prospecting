@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TrustMatch — LinkedIn Profile Screener</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f3; color: #1a1a1a; min-height: 100vh; padding: 2rem 1rem; }
+  .container { max-width: 680px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 500; margin-bottom: 4px; }
+  .subtitle { font-size: 14px; color: #666; margin-bottom: 1.5rem; }
+  .card { background: white; border-radius: 12px; border: 0.5px solid #e0e0e0; padding: 1.5rem; margin-bottom: 1rem; }
+  textarea { width: 100%; min-height: 160px; font-size: 14px; padding: 12px; border: 0.5px solid #ccc; border-radius: 8px; background: white; color: #1a1a1a; resize: vertical; font-family: inherit; line-height: 1.5; }
+  textarea:focus, input:focus { outline: none; border-color: #888; }
+  input { width: 100%; font-size: 14px; padding: 12px; border: 0.5px solid #ccc; border-radius: 8px; background: white; color: #1a1a1a; margin-bottom: 10px; }
+  button.analyse { width: 100%; padding: 12px; margin-top: 12px; font-size: 15px; font-weight: 500; cursor: pointer; border-radius: 8px; background: #1a1a1a; border: none; color: white; }
+  button.analyse:hover { background: #333; }
+  button.analyse:disabled { background: #999; cursor: not-allowed; }
+  .result-card { margin-top: 1.5rem; background: white; border: 0.5px solid #e0e0e0; border-radius: 12px; padding: 1.25rem; display: none; }
+  .verdict { display: flex; align-items: center; gap: 12px; margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 0.5px solid #e0e0e0; }
+  .verdict-badge { font-size: 13px; font-weight: 500; padding: 5px 14px; border-radius: 8px; }
+  .badge-YES { background: #EAF3DE; color: #27500A; }
+  .badge-MAYBE { background: #FAEEDA; color: #633806; }
+  .badge-NO { background: #FCEBEB; color: #791F1F; }
+  .verdict-name { font-size: 18px; font-weight: 500; }
+  .scores-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 1rem; }
+  .score-item { background: #f5f5f3; border-radius: 8px; padding: 10px 12px; }
+  .score-label { font-size: 11px; color: #666; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .score-bar-wrap { height: 4px; background: #e0e0e0; border-radius: 2px; margin-bottom: 6px; }
+  .score-bar { height: 4px; border-radius: 2px; }
+  .score-val { font-size: 13px; font-weight: 500; }
+  .reasoning { font-size: 14px; color: #444; line-height: 1.6; margin-bottom: 1rem; }
+  .reasoning strong { color: #1a1a1a; font-weight: 500; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .actions button { font-size: 13px; padding: 8px 14px; border-radius: 8px; cursor: pointer; border: 0.5px solid #ccc; background: white; color: #1a1a1a; }
+  .actions button:hover { background: #f5f5f3; }
+  .loading { display: none; text-align: center; padding: 2rem; color: #666; font-size: 14px; }
+  .hint { font-size: 13px; color: #666; margin-bottom: 10px; line-height: 1.5; }
+  .clear-btn { font-size: 12px; color: #888; background: none; border: none; cursor: pointer; float: right; }
+  .clear-btn:hover { color: #1a1a1a; }
+  .criteria { font-size: 13px; color: #555; line-height: 1.7; }
+  .criteria strong { color: #1a1a1a; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>LinkedIn Profile Screener</h1>
+  <p class="subtitle">TrustMatch Care — Target Prospect Qualifier</p>
+
+  <div class="card">
+    <p class="hint">Paste a LinkedIn profile — headline, about section, job title, company info. The screener scores against your £500k–£2m domiciliary care target criteria.</p>
+    <button class="clear-btn" onclick="clearForm()">Clear</button>
+    <input id="api-key" type="password" placeholder="Anthropic API key (stored in this browser only)" autocomplete="off" />
+    <textarea id="profile-input" placeholder="Paste LinkedIn profile text here..."></textarea>
+    <button class="analyse" onclick="analyse()">Screen this profile</button>
+    <div class="loading" id="loading">Analysing...</div>
+    <div class="result-card" id="result-card">
+      <div class="verdict">
+        <span class="verdict-badge" id="verdict-badge">—</span>
+        <span class="verdict-name" id="verdict-name">—</span>
+      </div>
+      <div class="scores-grid" id="scores-grid"></div>
+      <div class="reasoning" id="reasoning"></div>
+      <div class="actions" id="actions"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <p class="criteria"><strong>Target criteria:</strong> Owner / Director / CEO / MD of a domiciliary or home care agency. UK primary, overseas secondary. Company size signals: 10–50 employees, established 3+ years, private pay focus, not a large group or PE-backed. Turnover range: £500k–£2m. Not: care homes, NHS, local authority, staffing, solo operators, large groups.</p>
+  </div>
+</div>
+
+<script>
+const apiKeyInput = document.getElementById('api-key');
+apiKeyInput.value = localStorage.getItem('anthropic_api_key') || '';
+apiKeyInput.addEventListener('change', () => {
+  localStorage.setItem('anthropic_api_key', apiKeyInput.value.trim());
+});
+
+function clearForm() {
+  document.getElementById('profile-input').value = '';
+  document.getElementById('result-card').style.display = 'none';
+}
+
+async function analyse() {
+  const input = document.getElementById('profile-input').value.trim();
+  const apiKey = apiKeyInput.value.trim();
+
+  if (!input) {
+    alert('Please paste profile text first.');
+    return;
+  }
+
+  if (!apiKey) {
+    alert('Please add your Anthropic API key.');
+    return;
+  }
+
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('result-card').style.display = 'none';
+  document.querySelector('.analyse').disabled = true;
+
+  const systemPrompt = `You are a profile qualification expert for TrustMatch Care. You screen LinkedIn profiles to identify ideal prospects.
+
+TARGET PROFILE:
+- Owner, Director, CEO, MD, or senior C-suite of a domiciliary care / home care agency
+- UK primary, overseas secondary
+- Company turnover roughly £500k–£2m per year (infer from: employee count 10–50, established 3+ years, private pay focus, multiple locations but not a large group)
+- NOT: care homes/residential, NHS, local authority, staffing agencies, solo operators (<5 staff), large groups (200+ staff), PE-backed enterprises
+
+SCORING CRITERIA (score each 0–100):
+1. role_fit: Are they owner/director/C-suite level with commercial responsibility?
+2. sector_fit: Is this domiciliary/home care specifically (not care homes, not other sectors)?
+3. size_fit: Do signals suggest £500k–£2m turnover range?
+4. intent_fit: Any signals of growth mindset, private pay focus, commercial awareness?
+
+VERDICT:
+- YES: All four scores 60+, role and sector both 70+
+- MAYBE: Mixed signals, worth a look, at least two scores 60+
+- NO: Clear misfit on role, sector, or size
+
+Respond ONLY with valid JSON, no markdown, no explanation outside the JSON:
+{
+  "verdict": "YES" | "MAYBE" | "NO",
+  "name": "inferred name or Unknown",
+  "scores": { "role_fit": 0-100, "sector_fit": 0-100, "size_fit": 0-100, "intent_fit": 0-100 },
+  "summary": "2-3 sentence plain English verdict. Be direct. State what fits and what does not.",
+  "connect_message": "A short LinkedIn connection request message (max 25 words) if verdict is YES or MAYBE, otherwise empty string"
+}`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: 'Screen this LinkedIn profile:\n\n' + input }]
+      })
+    });
+
+    if (!res.ok) {
+      throw new Error('API request failed with status ' + res.status);
+    }
+
+    const data = await res.json();
+    const raw = (data.content || []).map((b) => b.text || '').join('');
+    const clean = raw.replace(/```json|```/g, '').trim();
+    renderResult(JSON.parse(clean));
+  } catch (e) {
+    alert('Something went wrong. Check your API key and response format, then try again.');
+  } finally {
+    document.getElementById('loading').style.display = 'none';
+    document.querySelector('.analyse').disabled = false;
+  }
+}
+
+function renderResult(r) {
+  const card = document.getElementById('result-card');
+  const badge = document.getElementById('verdict-badge');
+  badge.textContent = r.verdict;
+  badge.className = 'verdict-badge badge-' + r.verdict;
+  document.getElementById('verdict-name').textContent = r.name;
+
+  const labels = { role_fit: 'Role fit', sector_fit: 'Sector fit', size_fit: 'Size fit', intent_fit: 'Intent signals' };
+  const colors = { role_fit: '#1D9E75', sector_fit: '#378ADD', size_fit: '#BA7517', intent_fit: '#7F77DD' };
+
+  document.getElementById('scores-grid').innerHTML = Object.entries(r.scores).map(([k, v]) =>
+    '<div class="score-item"><div class="score-label">' + labels[k] + '</div><div class="score-bar-wrap"><div class="score-bar" style="width:' + v + '%;background:' + colors[k] + '"></div></div><div class="score-val">' + v + '/100</div></div>'
+  ).join('');
+
+  document.getElementById('reasoning').innerHTML = '<strong>Verdict:</strong> ' + r.summary;
+
+  const actions = document.getElementById('actions');
+  actions.innerHTML = '';
+  if (r.connect_message) {
+    const btn = document.createElement('button');
+    btn.textContent = 'Copy connection message';
+    btn.onclick = () => {
+      navigator.clipboard.writeText(r.connect_message);
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = 'Copy connection message'; }, 2000);
+    };
+    actions.appendChild(btn);
+  }
+
+  card.style.display = 'block';
+}
+</script>
+</body>
+</html>
